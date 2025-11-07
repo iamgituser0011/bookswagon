@@ -1,0 +1,392 @@
+<%@ control language="C#" autoeventwireup="true" inherits="components_BWTopBooks, App_Web_bwtopbooks.ascx.7e693e39" %>
+<%@ Import Namespace="Bookswagon.Business.Utility" %>
+
+
+<script type="text/javascript">
+    var imageBaseUrl_Images200 = '<%= SystemConfig.GetImagePath("", "images200") %>';
+    var imageBaseUrl_MainImages = '<%= SystemConfig.GetImagePath("", "mainimages") %>';
+</script>
+
+<style>
+.trendingSlider .card{opacity:0}
+</style>
+
+<div class="container">
+<div class="row mobileoneline">
+
+        <h2 class="float-left titlediv">
+           <%=PromoTitle%></h2>
+
+        <div class="float-left pageinfodiv">
+             <span id="lblPageInfo_<%= this.ClientID %>" class="mx-2 text-center mt-3"></span> |
+			<a class="seeallbtn" href="<%=SystemConfig.RootPath %>/promo-best-seller/<%=MyCommon.ValidateUrlTitle(PromoTitle) %>/<%=PromoCode%>">See All</a>
+        </div>
+    </div>
+</div>
+
+<div class="position-relative trendingSlider">
+    <div class="loading-overlay" id="loadingOverlay_<%= this.ClientID %>">
+        <img src="<%=SystemConfig.RootPath %>/images/dynamic/lazy-loading.gif" alt="Loading..." />
+    </div>
+    
+    <div class="container">
+        <div class="bookCarousel pattern9topBooks" id="bookCarousel_<%= this.ClientID %>">
+            <!-- Books will be loaded here via AJAX -->
+        </div>
+    </div>
+    
+    <div id="lblPageInfo_<%= this.ClientID %>" class="mx-2 font-weight-bold text-center mt-3"></div>
+    
+    <div class="custom-owl-nav">
+      <a href="#" id="btnPrev_<%= this.ClientID %>" class="owl-prev disabled"><img src="<%=SystemConfig.RootPath %>/images/staticimages/arrow1.png" alt="" /></a>
+       <a href="#" id="btnNext_<%= this.ClientID %>" class="owl-next"><img src="<%=SystemConfig.RootPath %>/images/staticimages/arrow2.png" alt="" /></a>
+    </div>
+</div>
+
+
+<hr style="margin-top: 1rem!important" class="mb-0 mt-3 ml-0 mr-0">
+
+<script type="text/javascript">
+
+
+    var TrendingBooks_<%= this.ClientID %> = (function () {
+
+
+        var currentPage = 1;
+        var totalRecords = 0;
+        var pageSize = 8;
+        var isLoading = false;
+        
+        var promoCode = '<%=PromoCode%>';
+        var rootPath = '<%=SystemConfig.RootPath %>';
+        var currencySymbol = '<%=SiteConfig.CurrencySymbol %>';
+        var isMobile = /Mobile|Android|iPhone/i.test(navigator.userAgent);
+
+        var pageCache = {};
+
+        
+
+
+        function calculatePageSize() {
+            var width = window.innerWidth;
+            if (width < 420) return 7;
+            else if (width < 1000) return 5;
+            else if (width < 1251) return 6;
+            else if (width < 1680) return 7;
+            else return 8;
+        }
+
+        function showLoading(show) {
+            var overlay = document.getElementById('loadingOverlay_<%= this.ClientID %>')
+;
+            if (show) {
+                overlay.classList.add('active');
+                isLoading = true;
+            } else {
+                overlay.classList.remove('active');
+                isLoading = false;
+            }
+        }
+
+       
+
+     function loadBooks(page,direction) {
+            if (isLoading) return;
+            console.log("📘 Inside loadBooks, page:", page, "promoCode:", promoCode);
+
+            currentPage = page;
+
+            if (pageCache[page]) {
+                renderBooks(pageCache[page].books,direction);
+                totalRecords = pageCache[page].totalRecords;
+                updatePagination();
+                applyRatings();
+                return;
+            }
+
+            showLoading(true);
+
+            $.ajax({
+                type: "GET",
+                url: "/getSliderData.ashx",   // 👈 match actual handler name!
+                data: {
+                    pageIndex: page,
+                    pageSize: pageSize,
+                    promoCode: promoCode,
+                    action: 'getTopBooks',
+                },
+                dataType: "json",
+                success: function (response) {
+                    console.log("✅ Response received:", response);
+
+                    // response is already a JS object, no need to parse .d
+                    if (response.success) {
+                        totalRecords = response.totalRecords;
+                        pageCache[page] = {
+                            books: response.books,
+                            totalRecords: response.totalRecords
+                        };
+                        renderBooks(response.books,direction);
+                        updatePagination();
+                        applyRatings();
+                    } else {
+                        console.warn("⚠️ No data found or success = false");
+                    }
+
+                    showLoading(false);
+                },
+                error: function (xhr, status, error) {
+                    console.error('❌ Error loading books:', status, error);
+                    console.error('Response text:', xhr.responseText);
+                    showLoading(false);
+                }
+            });
+        }
+
+       function renderBooks(books, direction) {
+    const container = $('#bookCarousel_<%= this.ClientID %>');
+    const total = books.length;
+
+    // 1️⃣ Build all HTML in memory first (no repeated DOM writes)
+    let html = '';
+    books.forEach(book => {
+        const imgPath = isMobile
+            ? imageBaseUrl_MainImages + '/productimages/mainimages/'
+            : imageBaseUrl_Images200 + '/productimages/images200/';
+
+        const hasDiscount = parseFloat(book.Discount) > 0;
+        const discountHtml = hasDiscount
+            ? `<div class="offer position-absolute" style="position:absolute; z-index:9">${Math.round(book.Discount)}%</div>`
+            : '';
+
+        const priceHtml = hasDiscount
+            ? `<span class="actualprice themecolor font-weight-bold">${currencySymbol}${book.ActualPrice}</span>
+               <span class="initialprice"><del>${currencySymbol}${book.SalePrice}</del></span>`
+            : `<span class="actualprice themecolor font-weight-bold">${currencySymbol}${book.ActualPrice}</span>`;
+
+        const hasReviews = parseFloat(book.AvgReviewCount) > 0;
+        const reviewHtml = hasReviews
+            ? `<span class="averageratingbox" data-rating="${book.AvgReviewCount}">
+                   ${book.AvgReviewCount}
+                   <img class="newtrendstar" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMyIgaGVpZ2h0PSIxMiI+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTYuNSA5LjQzOWwtMy42NzQgMi4yMy45NC00LjI2LTMuMjEtMi44ODMgNC4yNTQtLjQwNEw2LjUuMTEybDEuNjkgNC4wMSA0LjI1NC40MDQtMy4yMSAyLjg4Mi45NCA0LjI2eiIvPjwvc3ZnPg==">
+               </span>
+               <span class="allreviewcount">(${book.TotalReviewCount})</span>`
+            : '<span class="noreviewyet">No Review Yet</span>';
+
+        html += `
+            <div class="card align-items-center item" style="opacity:0">
+                ${discountHtml}
+                <a href="${rootPath}/book/${book.TitleUrl}/${book.ISBN13}">
+                    <img class="card-img-top" src="${imgPath}${book.ImageLocation}" 
+                        alt="${book.Title}" height="200px" width="125px" />
+                </a>
+                <div class="card-body bookbrief">
+                    <a class="quick-view themecolor" data-toggle="modal" data-target="#quickviewmodal"
+                        data-id="${book.ProductId}">Quick View</a>
+                    <p class="card-text text-center"><span class="booktitle font-weight-bold">${book.Title}</span></p>
+                    <p><span class="author authortextcolor">${book.AuthorName}</span></p>
+                    <div class="d-block">
+                        <span class="rating-stars-container d-block" style="padding-left:0px">
+                            <span class="rating-stars rating-stars-offslider position-relative" aria-hidden="true">
+                                ${'<img src="../../images/svg/graystar.svg">'.repeat(5)}
+                                <span class="rating-stars rating-stars-onslider position-absolute" data-rating="${book.AvgReviewCount}">
+                                    ${'<img src="../../images/svg/redstar.svg">'.repeat(5)}
+                                </span>
+                            </span>
+                        </span>
+                        ${reviewHtml}
+                    </div>
+                    <p class="text-center">${priceHtml}</p>
+                </div>
+            </div>`;
+    });
+
+    // 2️⃣ One DOM injection (much faster)
+    container.html(html);
+
+    // 3️⃣ Smooth fade animation (staggered)
+    const cards = container.find('.card');
+    const totalCards = cards.length;
+
+    // 4️⃣ Animate instantly after DOM paint
+    requestAnimationFrame(() => {
+        if (direction === "prev") {
+            cards.each(function (i) {
+                $(this).delay(40 * i).fadeTo(10, 1);
+            });
+        } else {
+            cards.each(function (i) {
+                const delayIndex = totalCards - i - 1;
+                $(this).delay(40 * delayIndex).fadeTo(10, 1);
+            });
+        }
+    });
+}
+
+
+
+        function applyRatings() {
+            $('.pattern9topBooks .card').each(function () {
+                var $card = $(this);
+                var $ratingBox = $card.find('.averageratingbox');
+                var $ratingBar = $card.find('.rating-stars-onslider');
+
+                var rating = parseFloat($ratingBar.attr('data-rating'));
+
+                if (rating > 3) $ratingBox.addClass('highrating');
+                else if (rating < 2) $ratingBox.addClass('lowrating');
+                else $ratingBox.addClass('moderaterating');
+
+                var percentage = rating * 20;
+                var decimal = rating % 1;
+
+                if (decimal > 0.6) percentage -= 3;
+                else if (decimal < 0.3) percentage += 2;
+
+                $ratingBar.css('width', percentage + '%');
+            });
+        }
+
+        function updatePagination() {
+            var totalPages = Math.ceil(totalRecords / pageSize);
+            var pageInfo = 'Page ' + currentPage + ' of ' + totalPages;
+            document.getElementById('lblPageInfo_<%= this.ClientID %>').textContent = pageInfo;
+
+            var prevBtn = document.getElementById('btnPrev_<%= this.ClientID %>')
+            var nextBtn = document.getElementById('btnNext_<%= this.ClientID %>')
+
+            if (currentPage > 1) {
+                prevBtn.classList.remove('disabled');
+            } else {
+                prevBtn.classList.add('disabled');
+            }
+
+            if (currentPage < totalPages) {
+                nextBtn.classList.remove('disabled');
+            } else {
+                nextBtn.classList.add('disabled');
+            }
+        }
+
+        function init() {
+            pageSize = calculatePageSize();
+            loadBooks(1);
+			
+			 if (window.innerWidth <= 768) {
+        const container = document.querySelectorAll('pattern9topBooks');
+        if (!container) return;
+
+        let lastScrollLeft = 0;
+        let scrollTimeout;
+        let startX = 0;
+
+        // 🎯 Scroll detection (for slow scroll / reach end)
+        container.addEventListener('scroll', function () {
+            clearTimeout(scrollTimeout);
+
+            scrollTimeout = setTimeout(() => {
+                const scrollLeft = container.scrollLeft;
+                const maxScrollLeft = container.scrollWidth - container.clientWidth;
+
+                const goingRight = scrollLeft > lastScrollLeft;
+                const goingLeft = scrollLeft < lastScrollLeft;
+
+                // ➡️ At end → go next
+                if (scrollLeft + container.clientWidth >= maxScrollLeft - 10 && goingRight) {
+                    console.log('➡️ reached end → go next');
+                    loadBooks(currentPage + 1, true);
+                }
+
+                // ⬅️ At start → go prev
+                if (scrollLeft <= 10 && goingLeft) {
+                    console.log('⬅️ reached start → go prev');
+                    loadBooks(currentPage - 1, true);
+                }
+
+                lastScrollLeft = scrollLeft;
+            }, 100);
+        });
+
+        // 🎯 Touch swipe detection (for fast swipe gestures)
+        container.addEventListener('touchstart', e => startX = e.touches[0].clientX);
+
+        container.addEventListener('touchend', e => {
+            const endX = e.changedTouches[0].clientX;
+            const diff = startX - endX;
+
+            if (diff > 50) {
+                // swipe left → next
+                console.log('👆 swipe left → next');
+               loadBooks(currentPage + 1, true);
+            } else if (diff < -50) {
+                // swipe right → prev
+                console.log('👇 swipe right → prev');
+                loadBooks(currentPage - 1, true);
+            }
+        });
+    }
+
+            document.getElementById('btnPrev_<%= this.ClientID %>').addEventListener('click', function (e) {
+                e.preventDefault();
+                if (currentPage > 1) {
+                    loadBooks(currentPage - 1,"prev");
+                }
+            });
+
+            document.getElementById('btnNext_<%= this.ClientID %>').addEventListener('click', function (e) {
+                e.preventDefault();
+                var totalPages = Math.ceil(totalRecords / pageSize);
+                if (currentPage < totalPages) {
+                    loadBooks(currentPage + 1,"next");
+                }
+            });
+
+            var resizeTimer;
+            window.addEventListener('resize', function () {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(function () {
+                    var newPageSize = calculatePageSize();
+                    if (newPageSize !== pageSize) {
+                        pageSize = newPageSize;
+                        loadBooks(1,"next");
+                        pageCache = {};
+
+                    }
+                }, 300);
+            });
+        }
+
+        return {
+            init: init
+        };
+    })();
+
+    $(document).ready(function () {
+        TrendingBooks_<%= this.ClientID %>.init();
+});
+
+
+
+
+
+<!-- 
+$(".trendingSlider .owl-next").on("click", function(){
+$(this).parents('.trendingSlider').find(".pattern9topBooks").animate({
+  scrollLeft: 0
+}, 500);})
+
+
+$('.trendingSlider .owl-prev').click(function() {
+  $('.card').each(function(i) {
+    $(this).delay(200 * i).fadeTo(400, 1); // fade in one by one
+  });
+});
+
+// Right-to-Left on "Next"
+$('.trendingSlider .owl-next').click(function() {
+  $($('.card').get().reverse()).each(function(i) {
+    $(this).delay(200 * i).fadeTo(400, 1); // fade in one by one
+  });
+   -->
+});
+</script>
